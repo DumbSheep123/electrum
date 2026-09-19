@@ -179,8 +179,6 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, Logger, QtEventListener):
         assert wallet, "no wallet"
         self.wallet = wallet
         self._protected_requires_password = self.wallet.has_keystore_encryption
-        if wallet.has_lightning() and not self.config.cv.GUI_QT_SHOW_TAB_CHANNELS.is_set():
-            self.config.GUI_QT_SHOW_TAB_CHANNELS = True  # override default, but still allow disabling tab manually
 
         Exception_Hook.maybe_setup(config=self.config, wallet=self.wallet)
 
@@ -195,6 +193,11 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, Logger, QtEventListener):
         self.showing_cert_mismatch_error = False
         self.tl_windows = []
         Logger.__init__(self)
+
+        if not wallet.has_lightning() and wallet.has_lightning_keys():
+            self.load_lightning(message=_('Enter your password to run lightning:'))
+        if wallet.has_lightning() and not self.config.cv.GUI_QT_SHOW_TAB_CHANNELS.is_set():
+            self.config.GUI_QT_SHOW_TAB_CHANNELS = True  # override default, but still allow disabling tab manually
 
         self._coroutines_scheduled = {}  # type: Dict[concurrent.futures.Future, str]
         self._coroutines_scheduled_lock = threading.Lock()
@@ -361,6 +364,10 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, Logger, QtEventListener):
         self.lock_menu.setEnabled(self._protected_requires_password())
         text = _('Lock') if self.wallet.get_unlocked_password() else _('Unlock')
         self.lock_menu.setText(text)
+
+    @protected
+    def load_lightning(self, password, message=None):
+        self.wallet.load_lightning(password)
 
     @protected
     def unlock_wallet(self, password, message=None):
@@ -2023,6 +2030,10 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, Logger, QtEventListener):
 
     def init_lightning_dialog(self, close_dialog: Optional[QDialog] = None) -> bool:
         assert not self.wallet.has_lightning()
+        if self.wallet.has_lightning_keys():
+            # the wallet is locked
+            self.load_lightning(message=_('Enter your password to run lightning:'))
+            return self.wallet.has_lightning()
         if self.wallet.can_have_deterministic_lightning():
             msg = _(
                 "Lightning is not enabled because this wallet was created with an old version of Electrum. "

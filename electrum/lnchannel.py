@@ -36,7 +36,7 @@ from electrum_ecc import ECPubkey
 from . import constants, util
 from .util import bfh, chunks, TxMinedInfo, error_text_bytes_to_safe_str, now
 from .bitcoin import redeem_script_to_address, COINBASE_MATURITY
-from .crypto import sha256, sha256d
+from .crypto import sha256, sha256d, pw_decode
 from .transaction import Transaction, PartialTransaction, TxInput, Sighash
 from .logging import Logger
 from .lntransport import LNPeerAddr
@@ -828,7 +828,8 @@ class Channel(AbstractChannel):
         self.config[LOCAL] = state["local_config"]
         self.config[REMOTE] = state["remote_config"]
         self.keys = ChannelKeys.from_seed(
-            bfh(state["channel_seed"]), multisig_privkey=bfh(state["multisig_privkey"]))
+            bfh(pw_decode(state["channel_seed"], lnworker.pw_key)),
+            multisig_privkey=bfh(pw_decode(state["multisig_privkey"], lnworker.pw_key)))
         self.keys.check_against_config(self.config[LOCAL])
         self.constraints = state["constraints"]  # type: ChannelConstraints
         self.funding_outpoint = state["funding_outpoint"]

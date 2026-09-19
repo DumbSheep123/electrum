@@ -262,6 +262,9 @@ async def run_offline_command(config: 'SimpleConfig', config_options: dict, wall
         except InvalidPassword:
             print_msg("Error: This password does not decode this wallet.")
             raise
+    if wallet and password is not None and wallet.has_keystore_encryption():
+        wallet.check_password(password)
+        wallet.load_lightning(password)
     if cmd.requires_network:
         print_msg("Warning: running command offline")
     # arguments passed to function

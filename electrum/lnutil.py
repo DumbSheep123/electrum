@@ -44,6 +44,9 @@ if TYPE_CHECKING:
 
 _logger = get_logger(__name__)
 
+# lightning keeps its key in memory: it uses one derived from the wallet key (see #4909)
+PW_KEY_MAGIC = b'lightning'
+
 
 # defined in BOLT-03:
 HTLC_TIMEOUT_WEIGHT_SRK = 663

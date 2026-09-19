@@ -79,6 +79,10 @@ class NWCServerPlugin(BasePlugin):
         self.initialized = True
 
     @hook
+    def lightning_loaded(self, wallet: 'Abstract_Wallet'):
+        self.start_plugin(wallet)
+
+    @hook
     def close_wallet(self, wallet: 'Abstract_Wallet', *args, **kwargs):
         if self.nwc_server is None or self.nwc_server.wallet is not wallet:
             return

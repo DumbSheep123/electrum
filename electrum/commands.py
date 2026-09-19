@@ -294,7 +294,10 @@ class Commands(Logger):
         if wallet is None:
             raise UserFacingException('could not load wallet')
         run_hook('load_wallet', wallet, None)
-        return wallet_path
+        if not wallet.is_unlocked() and wallet.has_lightning_keys():
+            # the gui can ask for the password when a channel is force closed (anchors), the daemon cannot
+            return "wallet loaded. Warning: lightning requires the wallet to be unlocked. Run 'unlock'."
+        return 'wallet loaded'
 
     @command('n')
     async def close_wallet(self, wallet_path=None):

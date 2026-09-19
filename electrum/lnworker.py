@@ -55,7 +55,8 @@ from .transaction import (
     Transaction, get_script_type_from_output_script, PartialTxOutput, PartialTransaction, PartialTxInput
 )
 from .crypto import (
-    sha256, chacha20_encrypt, chacha20_decrypt, pw_encode_with_xpub, pw_decode_with_version_and_mac
+    sha256, chacha20_encrypt, chacha20_decrypt, pw_encode_with_xpub, pw_decode_with_version_and_mac,
+    pw_encode, pw_decode, PasswordKey,
 )
 
 from .onion_message import OnionMessageManager
@@ -1009,10 +1010,17 @@ class LNWallet(Logger):
     MPP_SPLIT_PART_FRACTION = 0.2
     MPP_SPLIT_PART_MINAMT_MSAT = 5_000_000
 
-    def __init__(self, wallet: 'Abstract_Wallet', xprv, *, features: LnFeatures = None):
+    def __init__(
+            self, wallet: 'Abstract_Wallet', xprv, *,
+            pw_key: Optional[PasswordKey] = None,
+            features: LnFeatures = None,
+    ):
         self.wallet = wallet
         self.config = wallet.config
         self.db = wallet.db
+        # the key our secrets in the db are encrypted with. Lightning has to sign without
+        # user interaction, so we keep it for as long as we run. (see #4909)
+        self.pw_key = pw_key
         self.instantiation_timestamp = int(time.time())
         self.node_keypair = generate_keypair(BIP32Node.from_xkey(xprv), LnKeyFamily.NODE_KEY)
         self.backup_key = generate_keypair(BIP32Node.from_xkey(xprv), LnKeyFamily.BACKUP_CIPHER).privkey
@@ -1056,7 +1064,7 @@ class LNWallet(Logger):
             channel_backups = self.db.get_dict(name)
             for channel_id, storage in channel_backups.items():
                 if isinstance(storage, str):
-                    storage = ImportedChannelBackupStorage.from_bytes(bytes.fromhex(storage))
+                    storage = ImportedChannelBackupStorage.from_bytes(bfh(pw_decode(storage, pw_key)))
                 assert isinstance(storage, (OnchainChannelBackupStorage, ImportedChannelBackupStorage))
                 self._channel_backups[bfh(channel_id)] = cb = ChannelBackup(storage, lnworker=self)
                 self.wallet.set_reserved_addresses_for_chan(cb, reserved=True)
@@ -2908,14 +2916,14 @@ class LNWallet(Logger):
         assert isinstance(preimage, bytes), f"expected bytes, but got {type(preimage)}"
         if sha256(preimage) != payment_hash:
             raise Exception("tried to save incorrect preimage for payment_hash")
-        old_tuple = _, old_is_public = self._preimages.get(payment_hash.hex(), (None, False))
+        old_preimage, old_is_public = self._preimages.get(payment_hash.hex(), (None, False))
+        old_preimage = old_preimage and pw_decode(old_preimage, self.pw_key)
         mark_as_public |= old_is_public  # disallow True->False transition
         # sanity checks and conversions done.
-        new_tuple = preimage.hex(), mark_as_public
-        if old_tuple == new_tuple:  # no change
+        if (old_preimage, old_is_public) == (preimage.hex(), mark_as_public):  # no change
             return
         self.logger.debug(f"saving preimage for {payment_hash.hex()} (public={mark_as_public})")
-        self._preimages[payment_hash.hex()] = new_tuple
+        self._preimages[payment_hash.hex()] = pw_encode(preimage.hex(), self.pw_key), mark_as_public
         if write_to_disk:
             self.wallet.save_db()
 
@@ -2924,7 +2932,7 @@ class LNWallet(Logger):
         preimage_hex, _ = self._preimages.get(payment_hash.hex(), (None, None))
         if preimage_hex is None:
             return None
-        preimage_bytes = bytes.fromhex(preimage_hex)
+        preimage_bytes = bfh(pw_decode(preimage_hex, self.pw_key))
         if sha256(preimage_bytes) != payment_hash:
             raise Exception("found incorrect preimage for payment_hash")
         return preimage_bytes
@@ -3897,7 +3905,7 @@ class LNWallet(Logger):
                 raise util.UserFacingException(_("You already have a newer version of this backup in your wallet."))
         self.logger.info(f'importing channel backup: {channel_id.hex()}')
         d = self.db.get_dict("imported_channel_backups")
-        d[channel_id.hex()] = cb_blob.hex()
+        d[channel_id.hex()] = pw_encode(cb_blob.hex(), self.pw_key)
         with self.lock:
             cb = ChannelBackup(cb_storage, lnworker=self)
             self._channel_backups[channel_id] = cb

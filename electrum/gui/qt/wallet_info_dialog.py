@@ -152,11 +152,11 @@ class WalletInfoDialog(WindowModalDialog):
                 ks_vbox.addLayout(bip32fp_hbox)
                 if wallet.can_enable_disable_keystore(ks):
                     ks_buttons = []
-                    if not ks.is_watching_only():
+                    if not ks.is_watching_only() and not wallet.has_lightning_keys():
                         rm_keystore_button = QPushButton('Disable keystore')
                         rm_keystore_button.clicked.connect(partial(self.disable_keystore, ks))
                         ks_buttons.insert(0, rm_keystore_button)
-                    else:
+                    elif ks.is_watching_only():
                         add_keystore_button = QPushButton('Enable Keystore')
                         add_keystore_button.clicked.connect(self.enable_keystore)
                         ks_buttons.insert(0, add_keystore_button)
