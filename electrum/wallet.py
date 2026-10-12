@@ -3295,9 +3295,10 @@ class Abstract_Wallet(ABC, Logger, EventListener):
             ks.reencrypt_secrets(old_pw_key, new_pw_key)
         if keystores:
             self.save_keystore()
-        self.db.reencrypt_lightning_secrets(old_db_pw_key, new_pw_key)  # the lightning secrets
-        if self.lnworker:
-            self.lnworker.pw_key = new_pw_key and new_pw_key.child(PW_KEY_MAGIC)
+        with self.db.lock:  # LNWallet may write pw_key
+            self.db.reencrypt_lightning_secrets(old_db_pw_key, new_pw_key)  # the lightning secrets
+            if self.lnworker:
+                self.lnworker.pw_key = new_pw_key and new_pw_key.child(PW_KEY_MAGIC)
         encrypt_keystore = self.can_have_keystore_encryption()
         self.db.set_keystore_encryption(bool(new_pw) and encrypt_keystore)
         # save changes. force full rewrite to rm remnants of old password
@@ -4428,9 +4429,10 @@ class Deterministic_Wallet(Abstract_Wallet):
             pw_key = self.db.get_or_create_pw_key(password)
             keystore.reencrypt_secrets(None, pw_key)
             # so are the lightning secrets now: they were in plaintext, see upgrade_pw_hash_version
-            self.db.reencrypt_lightning_secrets(None, pw_key)
-            if self.lnworker:
-                self.lnworker.pw_key = pw_key.child(PW_KEY_MAGIC)
+            with self.db.lock:  # LNWallet may write pw_key
+                self.db.reencrypt_lightning_secrets(None, pw_key)
+                if self.lnworker:
+                    self.lnworker.pw_key = pw_key.child(PW_KEY_MAGIC)
         self._update_keystore(keystore)
 
     def disable_keystore(self, keystore: KeyStore) -> None:
